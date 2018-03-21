@@ -18515,7 +18515,7 @@
                 "Control-Queue": {
                     "type": "string"
                 },
-                "Custom-Appliction-Vars": {
+                "Custom-Application-Vars": {
                     "type": "object"
                 },
                 "Custom-Channel-Vars": {
@@ -25963,7 +25963,6 @@
                                 "type": "string"
                             },
                             "skype_rr": {
-                                "default": true,
                                 "description": "Determines whether to round-robin calls amongst all interfaces (overrides \"skype_interface\" setting)",
                                 "type": "boolean"
                             },
