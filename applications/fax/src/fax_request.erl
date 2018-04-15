@@ -417,7 +417,7 @@ overridden_fax_identity(Call, JObj) ->
 
 -spec end_receive_fax(kz_json:object(), state()) -> handle_cast_return().
 end_receive_fax(JObj, #state{call=Call}=State) ->
-    kapps_call_command:hangup(Call),
+    kapps_call_command:queued_hangup(Call),
     case kz_json:is_true([<<"Application-Data">>,<<"Fax-Success">>], JObj, 'false') of
         'true' -> end_receive_fax(State#state{fax_result=JObj});
         'false' ->
