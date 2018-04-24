@@ -1,4 +1,3 @@
-
 #!/usr/bin/env escript
 %%! +A0 -sname kazoo_dialyzer
 %% -*- coding: utf-8 -*-
@@ -9,37 +8,35 @@
 
 %% API
 
-main([_KazooPLT]) -> 'ok';
 main([KazooPLT | Args]) ->
-    'false' =:= lists:suffix(".plt", KazooPLT)
-        andalso usage(1),
-
-    Env = string:tokens(os:getenv("TO_DIALYZE", ""), " "),
-
-    case filter_for_erlang_files(lists:usort(Args ++ Env)) of
+    case lists:suffix(".plt", KazooPLT) of
+        'true' -> 'ok';
+        'false' ->
+            usage(),
+            halt(1)
+    end,
+    case [Arg || Arg <- lists:usort(Args ++ string:tokens(os:getenv("TO_DIALYZE", ""), " ")),
+                 not is_test(Arg)
+                     andalso (
+                       is_ebin_dir(Arg)
+                       orelse is_beam(Arg)
+                       orelse is_erl(Arg)
+                      )
+         ]
+    of
         [] ->
             io:format("No files to process\n"),
-            usage(0);
+            usage(),
+            halt(0);
         Paths ->
-            case warn(KazooPLT, Paths) of
-                0 -> halt(0);
-                Count ->
-                    io:format("~p Dialyzer warnings\n", [Count]),
-                    halt(Count)
-            end
+            Count = warn(KazooPLT, Paths),
+            Count > 0
+                andalso io:format("~p Dialyzer warnings\n", [Count]),
+            halt(Count)
     end;
 main(_) ->
-    usage(0).
-
-filter_for_erlang_files(Files) ->
-    [Arg || Arg <- Files,
-            not is_test(Arg)
-                andalso (
-                  is_ebin_dir(Arg)
-                  orelse is_beam(Arg)
-                  orelse is_erl(Arg)
-                 )
-    ].
+    usage(),
+    halt(0).
 
 %% Internals
 
@@ -56,13 +53,13 @@ is_ebin_dir(Path) ->
     "ebin" == filename:basename(Path).
 
 root_dir(Path) ->
-    filename:join(lists:takewhile(fun is_not_src/1
-                                 ,string:tokens(Path, "/")
-                                 )
-                 ).
-
-is_not_src("src") -> 'false';
-is_not_src(_) -> 'true'.
+    filename:join(
+      lists:takewhile(fun ("src") -> 'false';
+                          (_) -> 'true'
+                      end
+                     ,string:tokens(Path, "/")
+                     )
+     ).
 
 file_exists(Filename) ->
     case file:read_file_info(Filename) of
@@ -122,7 +119,7 @@ do_warn(PLT, Paths) ->
 ensure_kz_types(Beams) ->
     case lists:any(fun(F) -> filename:basename(F, ".beam") =:= "kz_types" end, Beams) of
         'true' -> Beams;
-        'false' -> [code:which('kz_types') | Beams]
+        'false' -> [code:which(kz_types) | Beams]
     end.
 
 do_warn_path({_, []}, Acc) -> Acc;
@@ -160,10 +157,10 @@ filter({'warn_undefined_callbacks', _, _}) -> 'false';
 filter({'warn_contract_types', _, {'overlapping_contract',_}}) -> 'false';
 filter(_W) -> 'true'.
 
-print({Tag, {File, Line}, _W}=Warning) ->
-    io:format("~s:~p: ~s~n  ~s~n", [File, Line, Tag, dialyzer:format_warning(Warning)]);
+print({Tag, {File, Line}, _Warning} = W) ->
+    io:format("~s:~p: ~-30.. s~s~n", [File, Line, Tag, dialyzer:format_warning(W)]);
 print(_Err) ->
-    io:format("error: ~p~n", [_Err]).
+    _Err.
 
 scan(PLT, Things) ->
     try do_scan(PLT, Things) of
@@ -177,7 +174,6 @@ do_scan(PLT, Paths) ->
     dialyzer:run([{'init_plt', PLT}
                  ,{'analysis_type', 'succ_typings'}
                   %% ,{'files_rec', [Path]}
-                 ,{'from', 'byte_code'}
                  ,{'files', Paths}
                  ,{'warnings', ['error_handling' %% functions that only return via exception
                                 %% ,no_behaviours  %% suppress warnings about behaviour callbacks
@@ -200,9 +196,8 @@ do_scan(PLT, Paths) ->
                                ]}
                  ]).
 
-usage(Exit) ->
+usage() ->
     Arg0 = escript:script_name(),
-    io:format("Usage: ~s  <path to .kazoo.plt> <path to ebin/>+\n", [filename:basename(Arg0)]),
-    halt(Exit).
+    io:format("Usage: ~s  <path to .kazoo.plt> <path to ebin/>+\n", [filename:basename(Arg0)]).
 
 %% End of Module
