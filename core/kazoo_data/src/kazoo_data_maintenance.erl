@@ -24,6 +24,7 @@
         ]).
 
 -export([load_doc_from_file/2]).
+-export([refresh_views/1]).
 
 -spec flush() -> 'ok'.
 flush() ->
@@ -114,3 +115,7 @@ load_doc_from_file(Db, FilePath) ->
             lager:debug("exception: ~p", [Reason]),
             {'error', Reason}
     end.
+
+-spec refresh_views(kz_term:ne_binary()) -> no_return.
+refresh_views(Db) ->
+    kz_datamgr:refresh_views(Db).
