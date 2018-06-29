@@ -40,6 +40,8 @@
                                   ,{<<"system_data">>, ?ANY_TYPE_CACHING_POLICY(<<"infinity">>)}
                                   ])).
 
+-define(STAMPEDE_WAIT_MS, 1500). % see kz_cache_stampede_tests
+
 -spec open_cache_doc(kz_term:text(), kz_term:ne_binary(), kz_term:proplist()) ->
                             {'ok', kz_json:object()} |
                             data_error() |
@@ -49,7 +51,7 @@ open_cache_doc(DbName, DocId, Options) ->
     case kz_cache:fetch_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
         {MitigationKey, 'true'} ->
             ?LOG_DEBUG("avoiding stampede in ~s while ~s/~s is fetched", [?CACHE_NAME, DbName, DocId]),
-            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId});
+            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId}, ?STAMPEDE_WAIT_MS);
         {'ok', {'error', _}=E} -> E;
         {'ok', _}=Ok -> Ok;
         {'error', 'not_found'} ->
@@ -65,7 +67,7 @@ mitigate_stampede(DbName, DocId, Options) ->
         'ok' -> fetch_doc(DbName, DocId, Options);
         'error' ->
             ?LOG_INFO("another process is mititgating, waiting"),
-            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId})
+            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId}, ?STAMPEDE_WAIT_MS)
     end.
 
 fetch_doc(DbName, DocId, Options) ->

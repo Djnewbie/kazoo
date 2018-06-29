@@ -1,6 +1,6 @@
 -module(kz_cache_stampede_tests).
 
--export([stampede_worker/3]).
+-export([stampede_worker/2]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kazoo_stdlib/include/kz_types.hrl").
@@ -30,8 +30,38 @@ init() ->
 %% The rest of the workers should insert monitor objects into the monitor table
 %% to be notified when the key is written to with a "real" value.
 %%
+%% Runs with 'make eunit':
+%%
+%% Document write time | Workers | WaitForStampede | Success/Fail
+%%
+%% 100ms | 3000 |  500 | 3000/0 x 3 1785/1215
+%% 100ms | 5000 |  500 | 4165/835 4922/78 2051/2949 5000/0
+%%
+%% 200ms | 3000 |  500 | 2216/784 2717/283 2492/508 1793/1207
+%% 200ms | 3000 | 1000 | 3000/0 x 4
+%% 200ms | 5000 | 1000 | 4117/883 4092/908 5000/0 x 3
+%% 200ms | 5000 | 1500 | 5000/0 x 4
+%%
+%% Adding 'read_concurrency' flag to main ETS table:
+%% 200ms | 5000 |  500 | 3232/1768 1519/3481 2341/2659
+%%
+%% No appreciable difference
+%%
+%% Interestingly, if you remove the timer:sleep() from the beginning of the
+%% `stampede_worker` function, DB_WRITE_TIME can be quite large and all workers
+%% succeed. Introducing that variability sends the world into chaos.
+%%
+%% Given the above table, and since most DB fetches are ~100-150ms, setting the
+%% stampede timeout in kzs_cache to 1500ms seems conservative and should reduce
+%% the pressure on the DBs significantly in the case of a stampede.
+%%
 %% @end
 %%------------------------------------------------------------------------------
+
+%% all in milliseconds
+-define(WORKERS, 5000).
+-define(STAMPEDE_TIMEOUT, 1500).
+-define(DB_WRITE_TIME, 200).
 
 init_load() ->
     CachePid = init(),
@@ -39,15 +69,12 @@ init_load() ->
     Key = kz_binary:rand_hex(5),
     Value = kz_binary:rand_hex(6),
 
-    Workers = 3000,
-    StampedeTimeout = 1000,
-
-    Pids = [spawn_monitor(?MODULE, 'stampede_worker', [Key, Value, StampedeTimeout])
-            || _ <- lists:seq(1,Workers)
+    Pids = [spawn_monitor(?MODULE, 'stampede_worker', [Key, Value])
+            || _N <- lists:seq(1, ?WORKERS)
            ],
     Waited = wait_for_workers(Pids, {0, 0}),
 
-    {CachePid, Waited, Workers}.
+    {CachePid, Waited, ?WORKERS}.
 
 cleanup({CachePid, _, _}) ->
     cleanup(CachePid);
@@ -71,38 +98,31 @@ writer_job_stampede(Key, Value, Timeout) ->
 stampede_load({_CachePid, Waited, Workers}) ->
     ?_assertEqual({Workers, 0}, Waited).
 
-stampede_worker(Key, Value, StampedeTimeout) ->
-    timer:sleep(rand:uniform(50)),
+stampede_worker(Key, Value) ->
+    timer:sleep(rand:uniform(10) + 10),
 
-    %% ?LOG_INFO("~p: starting worker", [self()]),
     MitigationKey = kz_cache:mitigation_key(),
     {'ok', Value} =
         case kz_cache:fetch_local(?MODULE, Key) of
             {MitigationKey, _Pid} ->
-                %% ?LOG_INFO("~p: waiting for mitigation from ~p", [self(), _Pid]),
-                kz_cache:wait_for_stampede_local(?MODULE, Key, StampedeTimeout);
+                kz_cache:wait_for_stampede_local(?MODULE, Key, ?STAMPEDE_TIMEOUT);
             {'ok', Value}=Ok ->
-                %% ?LOG_INFO("got value"),
                 Ok;
             {'error', 'not_found'} ->
-                %% ?LOG_INFO("~p: mitigating stampede", [self()]),
-                mitigate_stampede(Key, Value, StampedeTimeout)
+                mitigate_stampede(Key, Value)
         end.
 
-mitigate_stampede(Key, Value, StampedeTimeout) ->
+mitigate_stampede(Key, Value) ->
     case kz_cache:mitigate_stampede_local(?MODULE, Key) of
         'ok' ->
-            %% ?LOG_INFO("~p: locked key", [self()]),
             write_to_cache(Key, Value);
         'error' ->
-            %% ?LOG_INFO("~p: key already locked", [self()]),
-            kz_cache:wait_for_stampede_local(?MODULE, Key, StampedeTimeout)
+            kz_cache:wait_for_stampede_local(?MODULE, Key, ?STAMPEDE_TIMEOUT)
     end.
 
 write_to_cache(Key, Value) ->
-    timer:sleep(200), % simulate a db operation or other long-computation
+    timer:sleep(?DB_WRITE_TIME), % simulate a db operation or other long-computation
     kz_cache:store_local(?MODULE, Key, Value),
-    %% ?LOG_INFO("~p: wrote key", [self()]),
     {'ok', Value}.
 
 wait_for_workers([], Results) -> Results;
@@ -112,6 +132,6 @@ wait_for_workers([{Pid, Ref} | Pids], {Success, Fail}) ->
             wait_for_workers(Pids, {Success+1, Fail});
         {'DOWN', Ref, 'process', Pid, _Reason} ->
             wait_for_workers(Pids, {Success, Fail+1})
-    after 5000 ->
+    after ?STAMPEDE_TIMEOUT ->
             wait_for_workers(Pids, {Success, Fail+1})
     end.
