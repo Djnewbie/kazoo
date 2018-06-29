@@ -69,9 +69,9 @@
 -export_type([store_options/0]).
 
 -record(state, {name :: atom()
-               ,tab :: ets:tab()
-               ,pointer_tab :: ets:tab()
-               ,monitor_tab :: ets:tab()
+               ,tab :: atom()
+               ,pointer_tab :: atom()
+               ,monitor_tab :: atom()
                ,new_channel_flush = 'false' :: boolean()
                ,channel_reconnect_flush = 'false' :: boolean()
                ,new_node_flush = 'false' :: boolean()
@@ -255,7 +255,7 @@ dump_local(Srv, ShowValue) ->
         ],
     'ok'.
 
--spec dump_table(ets:tab(), boolean()) -> 'ok'.
+-spec dump_table(atom(), boolean()) -> 'ok'.
 dump_table(Tab, ShowValue) ->
     Now = kz_time:now_s(),
     io:format('user', "Table ~p~n", [ets:info(Tab, 'name')]),
@@ -625,7 +625,7 @@ get_props_callback(Props) ->
 -spec get_props_origin(kz_term:proplist()) -> 'undefined' | origin_tuple() | origin_tuples().
 get_props_origin(Props) -> props:get_value('origin', Props).
 
--spec expire_objects(ets:tab(), [ets:tab()]) -> non_neg_integer().
+-spec expire_objects(atom(), kz_term:atoms()) -> non_neg_integer().
 expire_objects(Tab, AuxTables) ->
     Now = kz_time:now_s(),
     FindSpec = [{#cache_obj{key = '$1'
@@ -642,7 +642,7 @@ expire_objects(Tab, AuxTables) ->
                 }],
     expire_objects(Tab, AuxTables, ets:select(Tab, FindSpec)).
 
--spec expire_objects(ets:tab(), [ets:tab()], list()) -> non_neg_integer().
+-spec expire_objects(atom(), kz_term:atoms(), list()) -> non_neg_integer().
 expire_objects(_Tab, _AuxTables, []) -> 0;
 expire_objects(Tab, AuxTables, Objects) ->
     _ = maybe_exec_expired_callbacks(Objects),
@@ -665,18 +665,18 @@ exec_expired_callback(Fun, K, V) ->
     _ = kz_util:spawn(Fun, [K, V, 'expire']),
     'ok'.
 
--spec maybe_remove_objects(ets:tab(), list()) -> 'ok'.
+-spec maybe_remove_objects(atom(), list()) -> 'ok'.
 maybe_remove_objects(Tab, Objects) ->
     _ = [maybe_remove_object(Tab, Object) || Object <- Objects],
     'ok'.
 
--spec maybe_remove_object(ets:tab(), cache_obj() | any()) -> 'true'.
+-spec maybe_remove_object(atom(), cache_obj() | any()) -> 'true'.
 maybe_remove_object(Tab, #cache_obj{key = Key}) ->
     maybe_remove_object(Tab, Key);
 maybe_remove_object(Tab, Key) ->
     ets:delete(Tab, Key).
 
--spec maybe_exec_erase_callbacks(ets:tab(), cache_obj() | any()) -> 'ok'.
+-spec maybe_exec_erase_callbacks(atom(), cache_obj() | any()) -> 'ok'.
 maybe_exec_erase_callbacks(_Tab
                           ,#cache_obj{callback=Fun
                                      ,value=Value
@@ -696,13 +696,13 @@ maybe_exec_erase_callbacks(Tab, Key) ->
         'error':'badarg' -> 'ok'
     end.
 
--spec exec_erase_callbacks(ets:tab(), any(), callback_fun()) ->
+-spec exec_erase_callbacks(atom(), any(), callback_fun()) ->
                                   any().
 exec_erase_callbacks(Tab, Key, Fun) ->
     Value = ets:lookup_element(Tab, Key, #cache_obj.value),
     Fun(Key, Value, 'erase').
 
--spec maybe_exec_flush_callbacks(ets:tab()) -> 'ok'.
+-spec maybe_exec_flush_callbacks(atom()) -> 'ok'.
 maybe_exec_flush_callbacks(Tab) ->
     MatchSpec =
         [{#cache_obj{key = '$1'
@@ -716,7 +716,7 @@ maybe_exec_flush_callbacks(Tab) ->
 
     exec_flush_callbacks(Tab, MatchSpec).
 
--spec exec_flush_callbacks(ets:tab(), ets:match_spec()) -> 'ok'.
+-spec exec_flush_callbacks(atom(), ets:match_spec()) -> 'ok'.
 exec_flush_callbacks(Tab, MatchSpec) ->
     _ = [kz_util:spawn(Callback, [K, V, 'flush'])
          || {Callback, K, V} <- ets:select(Tab, MatchSpec),
@@ -728,7 +728,7 @@ exec_flush_callbacks(Tab, MatchSpec) ->
 maybe_exec_store_callbacks(#state{monitor_tab=MonitorTab}, Key, Value) ->
     maybe_exec_store_callbacks(MonitorTab, Key, Value, has_monitors(MonitorTab)).
 
--spec maybe_exec_store_callbacks(ets:tab(), any(), any(), boolean()) -> 'ok'.
+-spec maybe_exec_store_callbacks(atom(), any(), any(), boolean()) -> 'ok'.
 maybe_exec_store_callbacks(_MonitorTab, _Key, _Value, 'false') -> 'ok';
 maybe_exec_store_callbacks(MonitorTab, Key, Value, 'true') ->
     MatchSpec = [{#cache_obj{key = Key
@@ -746,11 +746,11 @@ maybe_exec_store_callbacks(MonitorTab, Key, Value, 'true') ->
             'ok'
     end.
 
--spec maybe_exec_timeout_callbacks(state(), reference()) -> 'ok'.
-maybe_exec_timeout_callbacks(#state{monitor_tab=MonitorTab}, MonitorRef) ->
+-spec maybe_exec_timeout_callbacks(atom(), reference()) -> 'ok'.
+maybe_exec_timeout_callbacks(MonitorTab, MonitorRef) ->
     maybe_exec_timeout_callbacks(MonitorTab, MonitorRef, has_monitors(MonitorTab)).
 
--spec maybe_exec_timeout_callbacks(ets:tab(), reference(), boolean()) -> 'ok'.
+-spec maybe_exec_timeout_callbacks(atom(), reference(), boolean()) -> 'ok'.
 maybe_exec_timeout_callbacks(_MonitorTab, _MonitorRef, 'false') -> 'ok';
 maybe_exec_timeout_callbacks(MonitorTab, MonitorRef, 'true') ->
     MatchSpec = [{#cache_obj{key = '$1'
@@ -763,20 +763,20 @@ maybe_exec_timeout_callbacks(MonitorTab, MonitorRef, 'true') ->
                  }],
     exec_timeout_callbacks(MonitorTab, MatchSpec).
 
--spec exec_timeout_callbacks(ets:tab(), ets:match_spec()) -> 'ok'.
+-spec exec_timeout_callbacks(atom(), ets:match_spec()) -> 'ok'.
 exec_timeout_callbacks(Tab, MatchSpec) ->
     _ = [exec_timeout_callback(Tab, list_to_tuple(Callback))
          || Callback <- ets:select(Tab, MatchSpec)
         ],
     'ok'.
 
--spec exec_timeout_callback(ets:tab(), {any(), reference(), fun()}) -> 'true'.
+-spec exec_timeout_callback(atom(), {any(), reference(), fun()}) -> 'true'.
 exec_timeout_callback(Tab, {Key, Value, Callback}) when is_function(Callback, 3),
                                                         is_reference(Value) ->
     kz_util:spawn(Callback, [Key, Value, 'timeout']),
     delete_monitor_callbacks(Tab, Key).
 
--spec has_monitors(ets:tab()) -> boolean().
+-spec has_monitors(atom()) -> boolean().
 has_monitors(MonitorTab) ->
     ets:info(MonitorTab, 'size') > 0.
 
@@ -786,7 +786,7 @@ exec_store_callback(Callbacks, Key, Value) ->
     _Pids = [kz_util:spawn(Callback, Args) || Callback <- Callbacks],
     'ok'.
 
--spec delete_monitor_callbacks(ets:tab(), any()) -> 'true'.
+-spec delete_monitor_callbacks(atom(), any()) -> 'true'.
 delete_monitor_callbacks(MonitorTab, Key) ->
     ets:delete(MonitorTab, Key).
 
@@ -799,7 +799,7 @@ start_monitor_expire_timer(Timeout, Ref) ->
     erlang:start_timer(Timeout, self(), {?MONITOR_EXPIRE_MSG, Ref}).
 
 -spec insert_origin_pointers('undefined' | origin_tuple() | origin_tuples()
-                            ,cache_obj(), ets:tab()) -> 'ok'.
+                            ,cache_obj(), atom()) -> 'ok'.
 insert_origin_pointers('undefined', _CacheObj, _PointerTab) -> 'ok';
 insert_origin_pointers(Origin, CacheObj, PointerTab) when is_tuple(Origin) ->
     insert_origin_pointer(Origin, CacheObj, PointerTab);
@@ -807,7 +807,7 @@ insert_origin_pointers(Origins, CacheObj, PointerTab) when is_list(Origins) ->
     [insert_origin_pointer(Origin, CacheObj, PointerTab) || Origin <- Origins],
     'ok'.
 
--spec insert_origin_pointer(origin_tuple(), cache_obj(), ets:tab()) -> 'true'.
+-spec insert_origin_pointer(origin_tuple(), cache_obj(), atom()) -> 'true'.
 insert_origin_pointer(Origin, #cache_obj{key=Key}=CacheObj, PointerTab) ->
     ets:insert(PointerTab
               ,CacheObj#cache_obj{key=Key
@@ -954,14 +954,14 @@ erase_changed(#cache_obj{key=Key}, Removed, #state{tab=Tab
             [Key | Removed]
     end.
 
--spec erase_changed(any(), ets:tab(), ets:tab(), ets:tab()) -> 'true'.
+-spec erase_changed(any(), atom(), atom(), atom()) -> 'true'.
 erase_changed(Key, Tab, PointerTab, MonitorTab) ->
     maybe_exec_erase_callbacks(Tab, Key),
     maybe_remove_object(Tab, Key),
     maybe_remove_object(PointerTab, Key),
     maybe_remove_object(MonitorTab, Key).
 
--spec handle_wait_for_key(ets:tab(), ets:tab(), any(), pos_integer()) ->
+-spec handle_wait_for_key(atom(), atom(), any(), pos_integer()) ->
                                  {'ok', reference()} |
                                  {'exists', any()}.
 handle_wait_for_key(Tab, MonitorTab, Key, Timeout) ->
