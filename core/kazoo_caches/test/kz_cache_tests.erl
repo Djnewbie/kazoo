@@ -3,6 +3,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kazoo_stdlib/include/kz_types.hrl").
 
+-define(BASE_TIMEOUT, 50).
+
 cache_test_() ->
     {'timeout'
     ,10
@@ -11,9 +13,11 @@ cache_test_() ->
       ,fun init/0
       ,fun cleanup/1
       ,fun(_CachePid) ->
-               [{"key exists", fun wait_for_key_local_existing/0}
-               ,{"key appears", fun wait_for_key_local_mid_stream/0}
-               ,{"key timeout", fun wait_for_key_local_timeout/0}
+               [{"wait for key exists", fun wait_for_key_local_existing/0}
+               ,{"wait for key appears", fun wait_for_key_local_mid_stream/0}
+               ,{"wait for key timeout", fun wait_for_key_local_timeout/0}
+               ,{"key peek", fun peek_local/0}
+               ,{"key timeout is flushed", fun key_timeout_is_flushed/0}
                ]
        end
       }
@@ -28,7 +32,7 @@ cleanup(CachePid) ->
     kz_cache:stop_local(CachePid).
 
 wait_for_key_local_existing() ->
-    Timeout = rand:uniform(1000)+1000,
+    Timeout = rand:uniform(?BASE_TIMEOUT)+?BASE_TIMEOUT,
     Key = kz_binary:rand_hex(5),
     Value = kz_binary:rand_hex(5),
 
@@ -39,19 +43,39 @@ wait_for_key_local_existing() ->
     ?assertEqual({'ok', Value}, kz_cache:wait_for_key_local(?MODULE, Key, Timeout)).
 
 wait_for_key_local_mid_stream() ->
-    Timeout = rand:uniform(1000)+1000,
+    Timeout = rand:uniform(?BASE_TIMEOUT)+?BASE_TIMEOUT,
     Key = kz_binary:rand_hex(5),
     Value = kz_binary:rand_hex(5),
 
     _WriterPid = spawn_monitor(fun() -> writer_job(Key, Value, Timeout) end),
 
-    ?assertEqual({'ok', Value}, kz_cache:wait_for_key_local(?MODULE, Key, Timeout)).
+    Wait = kz_cache:wait_for_key_local(?MODULE, Key, Timeout),
+    ?assertEqual({'ok', Value}, Wait).
 
 wait_for_key_local_timeout() ->
-    Timeout = 1000,
+    Timeout = ?BASE_TIMEOUT,
     Key = kz_binary:rand_hex(5),
 
     ?assertEqual({'error', 'timeout'}, kz_cache:wait_for_key_local(?MODULE, Key, Timeout)).
+
+peek_local() ->
+    Key = kz_binary:rand_hex(5),
+    Value = kz_binary:rand_hex(5),
+
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)),
+
+    kz_cache:store_local(?MODULE, Key, Value),
+    ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)).
+
+key_timeout_is_flushed() ->
+    Key = kz_binary:rand_hex(5),
+    Value = kz_binary:rand_hex(5),
+
+    Timeout = 1, % 1s
+    kz_cache:store_local(?MODULE, Key, Value, [{'expires', Timeout}]),
+    ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)),
+    timer:sleep(Timeout*?MILLISECONDS_IN_SECOND+1000), % account for soft-realtime timers
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)).
 
 writer_job(Key, Value, Timeout) ->
     timer:sleep(Timeout div 2),
