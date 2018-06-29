@@ -456,6 +456,7 @@ pages:
   - 'Loopback Channels': 'doc/engineering/loopback.md'
   - 'Kazoo Scripts': 'scripts/README.md'
   - 'Running Dev Shells': 'scripts/dev/README.md'
+  - 'Testing': 'doc/engineering/testing.md'
   - 'Using Dialyzer': 'doc/engineering/dialyzer.md'
   - 'Webhooks': 'doc/engineering/webhooks.md'
   - 'Attachments': 'core/kazoo_attachments/README.md'
