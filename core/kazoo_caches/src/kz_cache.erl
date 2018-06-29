@@ -13,16 +13,10 @@
         ,start_link/3
         ]).
 -export([stop_local/1]).
--export([store/2, store/3]).
--export([peek/1]).
--export([fetch/1, fetch_keys/0]).
--export([erase/1]).
--export([flush/0]).
--export([filter/1]).
--export([dump/0, dump/1]).
--export([wait_for_key/1, wait_for_key/2]).
 
--export([store_local/3, store_local/4]).
+-export([store_local/3, store_local/4
+        ,store_local_async/3, store_local_async/4
+        ]).
 -export([peek_local/2]).
 -export([fetch_local/2, fetch_keys_local/1]).
 -export([erase_local/2]).
@@ -133,72 +127,45 @@ maybe_add_db_binding([[]]) -> [[]];
 maybe_add_db_binding(BindingProps) ->
     [?DATABASE_BINDING | BindingProps].
 
-
--spec store(any(), any()) -> 'ok'.
-store(K, V) -> store(K, V, []).
-
--spec store(any(), any(), kz_term:proplist()) -> 'ok'.
-store(K, V, Props) -> store_local(?SERVER, K, V, Props).
-
--spec peek(any()) -> {'ok', any()} |
-                     {'error', 'not_found'}.
-peek(K) -> peek_local(?SERVER, K).
-
--spec fetch(any()) -> {'ok', any()} |
-                      {'error', 'not_found'}.
-fetch(K) -> fetch_local(?SERVER, K).
-
--spec erase(any()) -> 'ok'.
-erase(K) -> erase_local(?SERVER, K).
-
--spec flush() -> 'ok'.
-flush() -> flush_local(?SERVER).
-
--spec fetch_keys() -> [any()].
-fetch_keys() -> fetch_keys_local(?SERVER).
-
--spec filter(fun((any(), any()) -> boolean())) -> [{any(), any()}].
-filter(Pred) when is_function(Pred, 2) -> filter_local(?SERVER, Pred).
-
--spec dump() -> 'ok'.
-dump() -> dump('false').
-
--spec dump(kz_term:text()) -> 'ok'.
-dump(ShowValue) -> dump_local(?SERVER, ShowValue).
-
-
--spec wait_for_key(any()) -> {'ok', any()} |
-                             {'error', 'timeout'}.
-wait_for_key(Key) -> wait_for_key(Key, ?DEFAULT_WAIT_TIMEOUT).
-
--spec wait_for_key(any(), timeout()) -> {'ok', any()} |
-                                        {'error', 'timeout'}.
-wait_for_key(Key, Timeout) -> wait_for_key_local(?SERVER, Key, Timeout).
-
 %% Local cache API
 
--spec store_local(kz_types:server_ref(), any(), any()) -> 'ok'.
+-spec store_local(kz_types:server_ref(), any(), any()) -> 'ok' | 'error'.
 store_local(Srv, K, V) -> store_local(Srv, K, V, []).
 
--spec store_local(kz_types:server_ref(), any(), any(), kz_term:proplist()) -> 'ok'.
-store_local(Srv, K, V, Props) when is_atom(Srv) ->
-    case whereis(Srv) of
-        'undefined' ->
-            throw({'error', 'unknown_cache', Srv});
-        Pid -> store_local(Pid, K, V, Props)
+-spec store_local(kz_types:server_ref(), any(), any(), kz_term:proplist()) -> 'ok' | 'error'.
+store_local(Srv, K, V, Props)  ->
+    gen_server:call(resolve_cache_pid(Srv), {'store', cache_obj(K, V, Props)}).
+
+-spec store_local_async(kz_typs:server_ref(), any(), any()) -> 'ok'.
+store_local_async(Srv, K, V) ->
+    store_local_async(Srv, K, V, []).
+
+-spec store_local_async(kz_typs:server_ref(), any(), any(), kz_term:proplist()) -> 'ok'.
+store_local_async(Srv, K, V, Props) ->
+    gen_server:cast(resolve_cache_pid(Srv), {'store', cache_obj(K, V, Props)}).
+
+cache_obj(K, V, Props) ->
+    #cache_obj{key=K
+              ,value=V
+              ,expires=get_props_expires(Props)
+              ,callback=get_props_callback(Props)
+              ,origin=get_props_origin(Props)
+              }.
+
+-spec resolve_cache_pid(kz_term:server_ref()) -> pid().
+resolve_cache_pid(Name) when is_atom(Name) ->
+    case whereis(Name) of
+        'undefined' -> throw({'error', 'unknown_cache', Name});
+        Pid -> Pid
     end;
-store_local(Srv, K, V, Props) when is_pid(Srv) ->
-    gen_server:call(Srv, {'store', #cache_obj{key=K
-                                             ,value=V
-                                             ,expires=get_props_expires(Props)
-                                             ,callback=get_props_callback(Props)
-                                             ,origin=get_props_origin(Props)
-                                             }}).
+resolve_cache_pid(Pid) when is_pid(Pid) -> Pid.
 
 -spec peek_local(atom(), any()) -> {'ok', any()} |
+                                   {?MITIGATION, pid()} |
                                    {'error', 'not_found'}.
 peek_local(Srv, K) ->
     try ets:lookup_element(Srv, K, #cache_obj.value) of
+        {?MITIGATION, _Pid}=Mitigation -> Mitigation;
         Value -> {'ok', Value}
     catch
         'error':'badarg' ->
