@@ -435,13 +435,7 @@ handle_call({'flush'}, _From, #state{tab=Tab
                                     ,pointer_tab=PointerTab
                                     ,monitor_tab=MonitorTab
                                     }=State) ->
-    maybe_exec_flush_callbacks(Tab),
-    maybe_exec_flush_callbacks(PointerTab),
-    maybe_exec_flush_callbacks(MonitorTab),
-
-    ets:delete_all_objects(Tab),
-    ets:delete_all_objects(PointerTab),
-    ets:delete_all_objects(MonitorTab),
+    handle_flush(Tab, PointerTab, MonitorTab),
 
     {'reply', 'ok', State};
 
@@ -473,14 +467,7 @@ handle_cast({'flush'}, #state{tab=Tab
                              ,pointer_tab=PointerTab
                              ,monitor_tab=MonitorTab
                              }=State) ->
-    maybe_exec_flush_callbacks(Tab),
-    maybe_exec_flush_callbacks(PointerTab),
-    maybe_exec_flush_callbacks(MonitorTab),
-
-    ets:delete_all_objects(Tab),
-    ets:delete_all_objects(PointerTab),
-    ets:delete_all_objects(MonitorTab),
-
+    handle_flush(Tab, PointerTab, MonitorTab),
     {'noreply', State};
 
 handle_cast({'kz_amqp_channel', {'new_channel', 'false'}}
@@ -997,3 +984,13 @@ add_monitor(MonitorTab, Key, Timeout, FromPid) ->
     'true' = ets:insert(MonitorTab, CacheObj),
     _ = start_monitor_expire_timer(Timeout, Ref),
     Ref.
+
+handle_flush(Tab, PointerTab, MonitorTab) ->
+    maybe_exec_flush_callbacks(Tab),
+    maybe_exec_flush_callbacks(PointerTab),
+    maybe_exec_flush_callbacks(MonitorTab),
+
+    ets:delete_all_objects(Tab),
+    ets:delete_all_objects(PointerTab),
+    ets:delete_all_objects(MonitorTab),
+    'ok'.

@@ -19,6 +19,7 @@ cache_test_() ->
                ,{"key peek", fun peek_local/0}
                ,{"key erase", fun key_erase/0}
                ,{"cache flush", fun cache_flush/0}
+               ,{"fetch keys", fun fetch_keys/0}
                ,{"key timeout is flushed", fun key_timeout_is_flushed/0}
                ]
        end
@@ -103,6 +104,19 @@ cache_flush() ->
 
     kz_cache:flush_local(?MODULE),
     ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)).
+
+fetch_keys() ->
+    Key = kz_binary:rand_hex(5),
+    Value = kz_binary:rand_hex(5),
+
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)),
+    ?assertEqual([], kz_cache:fetch_keys_local(?MODULE)),
+
+    kz_cache:store_local(?MODULE, Key, Value),
+    ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)),
+
+    Keys = kz_cache:fetch_keys_local(?MODULE),
+    ?assertEqual([Key], Keys).
 
 writer_job(Key, Value, Timeout) ->
     timer:sleep(Timeout div 2),
