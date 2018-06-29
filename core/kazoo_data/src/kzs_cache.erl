@@ -17,7 +17,6 @@
         ,flush_cache_docs/3
         ]).
 
-
 -include("kz_data.hrl").
 
 -define(DEFAULT_NO_CACHING_TYPES, [<<"media">>, <<"private_media">>, <<"call_recording">>
@@ -46,14 +45,33 @@
                             data_error() |
                             {'error', 'not_found'}.
 open_cache_doc(DbName, DocId, Options) ->
+    MitigationKey = kz_cache:mitigation_key(),
     case kz_cache:fetch_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
+        {MitigationKey, 'true'} ->
+            ?LOG_DEBUG("avoiding stampede in ~s while ~s/~s is fetched", [?CACHE_NAME, DbName, DocId]),
+            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId});
         {'ok', {'error', _}=E} -> E;
         {'ok', _}=Ok -> Ok;
         {'error', 'not_found'} ->
-            R = kz_datamgr:open_doc(DbName, DocId, remove_cache_options(Options)),
-            _ = maybe_cache(DbName, DocId, Options, R),
-            R
+            mitigate_stampede(DbName, DocId, Options)
     end.
+
+-spec mitigate_stampede(kz_term:text(), kz_term:ne_binary(), kz_term:proplist()) ->
+                               {'ok', kz_json:object()} |
+                               data_error() |
+                               {'error', 'not_found'}.
+mitigate_stampede(DbName, DocId, Options) ->
+    case kz_cache:mitigate_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
+        'ok' -> fetch_doc(DbName, DocId, Options);
+        'error' ->
+            ?LOG_INFO("another process is mititgating, waiting"),
+            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId})
+    end.
+
+fetch_doc(DbName, DocId, Options) ->
+    R = kz_datamgr:open_doc(DbName, DocId, remove_cache_options(Options)),
+    _ = maybe_cache(DbName, DocId, Options, R),
+    R.
 
 -spec maybe_cache(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist(), data_error() | {'ok', kz_json:object()}) ->
                          'ok'.
@@ -68,6 +86,8 @@ maybe_cache(DbName, DocId, _, {'ok', JObj}) ->
                             {'error', 'not_found'}.
 open_cache_doc(Server, DbName, DocId, Options) ->
     case kz_cache:fetch_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
+        {'stampede_mitigation', 'true'} ->
+            kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId});
         {'ok', {'error', _}=E} -> E;
         {'ok', _}=Ok -> Ok;
         {'error', 'not_found'} ->
