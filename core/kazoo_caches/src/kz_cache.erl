@@ -200,7 +200,7 @@ erase_local(Srv, K) ->
 flush_local(Srv) when not is_atom(Srv) ->
     flush_local(kz_term:to_atom(Srv));
 flush_local(Srv) ->
-    gen_server:cast(Srv, {'flush'}).
+    gen_server:call(Srv, {'flush'}).
 
 -spec fetch_keys_local(atom()) -> list().
 fetch_keys_local(Srv) ->
@@ -430,6 +430,19 @@ handle_call({'erase', Key}, _From, #state{tab=Tab
                                          ,monitor_tab=MonitorTab
                                          }=State) ->
     erase_changed(Key, Tab, PointerTab, MonitorTab),
+    {'reply', 'ok', State};
+handle_call({'flush'}, _From, #state{tab=Tab
+                                    ,pointer_tab=PointerTab
+                                    ,monitor_tab=MonitorTab
+                                    }=State) ->
+    maybe_exec_flush_callbacks(Tab),
+    maybe_exec_flush_callbacks(PointerTab),
+    maybe_exec_flush_callbacks(MonitorTab),
+
+    ets:delete_all_objects(Tab),
+    ets:delete_all_objects(PointerTab),
+    ets:delete_all_objects(MonitorTab),
+
     {'reply', 'ok', State};
 
 handle_call(_Request, _From, State) ->

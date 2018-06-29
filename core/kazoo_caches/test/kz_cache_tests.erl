@@ -17,6 +17,8 @@ cache_test_() ->
                ,{"wait for key appears", fun wait_for_key_local_mid_stream/0}
                ,{"wait for key timeout", fun wait_for_key_local_timeout/0}
                ,{"key peek", fun peek_local/0}
+               ,{"key erase", fun key_erase/0}
+               ,{"cache flush", fun cache_flush/0}
                ,{"key timeout is flushed", fun key_timeout_is_flushed/0}
                ]
        end
@@ -75,6 +77,31 @@ key_timeout_is_flushed() ->
     kz_cache:store_local(?MODULE, Key, Value, [{'expires', Timeout}]),
     ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)),
     timer:sleep(Timeout*?MILLISECONDS_IN_SECOND+1000), % account for soft-realtime timers
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)).
+
+key_erase() ->
+    Key = kz_binary:rand_hex(5),
+    Value = kz_binary:rand_hex(5),
+
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)),
+    ?assertEqual('ok', kz_cache:erase_local(?MODULE, Key)),
+
+    kz_cache:store_local(?MODULE, Key, Value),
+    ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)),
+
+    kz_cache:erase_local(?MODULE, Key),
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)).
+
+cache_flush() ->
+    Key = kz_binary:rand_hex(5),
+    Value = kz_binary:rand_hex(5),
+
+    ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)),
+
+    kz_cache:store_local(?MODULE, Key, Value),
+    ?assertEqual({'ok', Value}, kz_cache:peek_local(?MODULE, Key)),
+
+    kz_cache:flush_local(?MODULE),
     ?assertEqual({'error', 'not_found'}, kz_cache:peek_local(?MODULE, Key)).
 
 writer_job(Key, Value, Timeout) ->
