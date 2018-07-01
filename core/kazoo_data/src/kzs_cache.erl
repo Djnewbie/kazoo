@@ -49,7 +49,7 @@
 open_cache_doc(DbName, DocId, Options) ->
     MitigationKey = kz_cache:mitigation_key(),
     case kz_cache:fetch_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
-        {MitigationKey, 'true'} ->
+        {MitigationKey, _Pid} ->
             ?LOG_DEBUG("avoiding stampede in ~s while ~s/~s is fetched", [?CACHE_NAME, DbName, DocId]),
             kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId}, ?STAMPEDE_WAIT_MS);
         {'ok', {'error', _}=E} -> E;
@@ -87,8 +87,9 @@ maybe_cache(DbName, DocId, _, {'ok', JObj}) ->
                             data_error() |
                             {'error', 'not_found'}.
 open_cache_doc(Server, DbName, DocId, Options) ->
+    MitigationKey = kz_cache:mitigation_key(),
     case kz_cache:fetch_local(?CACHE_NAME, {?MODULE, DbName, DocId}) of
-        {'stampede_mitigation', 'true'} ->
+        {MitigationKey, _Pid} ->
             kz_cache:wait_for_stampede_local(?CACHE_NAME, {?MODULE, DbName, DocId});
         {'ok', {'error', _}=E} -> E;
         {'ok', _}=Ok -> Ok;
