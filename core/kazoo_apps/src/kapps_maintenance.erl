@@ -111,13 +111,15 @@ rebuild_token_auth(Pause) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec migrate_to_4_0() -> no_return.
+-spec migrate_to_4_0() -> 'no_return'.
 migrate_to_4_0() ->
     %% Number migration
+    lager:info("migrating number manager"),
     kazoo_number_manager_maintenance:migrate(),
     %% Voicemail migration
+    lager:info("migrating voicemail"),
     kazoo_voicemail_maintenance:migrate(),
-    no_return.
+    'no_return'.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -1146,6 +1148,7 @@ init_system() ->
 
 -spec check_release() -> 'ok' | 'error'.
 check_release() ->
+    kz_util:put_callid('check_release'),
     Checks = [fun kapps_started/0
              ,fun master_account_created/0
              ,fun migration_4_0_ran/0
@@ -1165,6 +1168,7 @@ check_release() ->
 
 -spec kapps_started() -> boolean().
 kapps_started() ->
+    lager:info("checking that kapps have started"),
     kapps_started(180 * ?MILLISECONDS_IN_SECOND).
 
 -spec kapps_started(integer()) -> 'true'.
@@ -1180,6 +1184,7 @@ kapps_started(_Timeout) ->
 
 -spec master_account_created() -> 'true'.
 master_account_created() ->
+    lager:info("trying to create the master account"),
     case rpc:call(node()
                  ,'crossbar_maintenance'
                  ,'create_account'
@@ -1196,8 +1201,10 @@ master_account_created() ->
 
 -spec migration_4_0_ran() -> boolean().
 migration_4_0_ran() ->
+    lager:info("migrating to 4.x"),
     'no_return' =:= migrate_to_4_0().
 
 -spec migration_ran() -> boolean().
 migration_ran() ->
+    lager:info("migrating"),
     'no_return' =:= migrate().
